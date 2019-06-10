@@ -11,7 +11,12 @@ public class MockClassTest {
     MockClass mapper;
 
     @DataGenerator
-    public MockBO generate() {
+    public MockBO generateBO() {
+        return null;
+    }
+
+    @DataGenerator
+    public MockDO generateDO() {
         return null;
     }
 

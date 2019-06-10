@@ -18,16 +18,16 @@
             <groupId>com.mappers</groupId>
             <artifactId>annotations</artifactId>
             <version>1.0-SNAPSHOT</version>
-            <scope>system</scope>
-            <systemPath>/home/kld/projects/mappertests/annotations/target/annotations-1.0-SNAPSHOT.jar</systemPath>
+            <!--<scope>system</scope>-->
+            <!--<systemPath>/home/kld/projects/mappertests/annotations/target/annotations-1.0-SNAPSHOT.jar</systemPath>-->
         </dependency>
 
         <dependency>
             <groupId>com.mappers</groupId>
-            <artifactId>processors</artifactId>
+            <artifactId>processor</artifactId>
             <version>1.0-SNAPSHOT</version>
-            <scope>system</scope>
-            <systemPath>/home/kld/projects/mappertests/processor/target/processor-1.0-SNAPSHOT.jar</systemPath>
+            <!--<scope>system</scope>-->
+            <!--<systemPath>/home/kld/projects/mappertests/processor/target/processor-1.0-SNAPSHOT.jar</systemPath>-->
             <optional>true</optional>
         </dependency>
 
