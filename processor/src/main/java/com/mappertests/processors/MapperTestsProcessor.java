@@ -8,12 +8,16 @@ import javax.annotation.processing.*;
 import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
+import java.io.IOException;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.mappertests.annotations.TargetMapper;
+import com.squareup.javapoet.JavaFile;
+import io.github.benas.randombeans.EnhancedRandomBuilder;
+import io.github.benas.randombeans.api.EnhancedRandom;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mappings;
 
@@ -54,7 +58,13 @@ public class MapperTestsProcessor extends AbstractProcessor {
             messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING, "Reading element " + element.getSimpleName());
 
             final CodeGenData codeGenData = extractCodeGenData(mapperTest, allMappers);
-            codeGen.generateTests(codeGenData);
+            JavaFile javaFile = codeGen.generateTests(codeGenData);
+
+            try {
+                javaFile.writeTo(filer);
+            } catch (IOException ex) {
+                messager.printMessage(Diagnostic.Kind.ERROR, "Failed to write file");
+            }
         }
 
         return true;

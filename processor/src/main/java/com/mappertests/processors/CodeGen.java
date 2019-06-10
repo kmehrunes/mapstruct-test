@@ -18,9 +18,9 @@ class CodeGen {
         this.processingEnv = processingEnv;
     }
 
-    void generateTests(final CodeGenData codeGenData) {
-        final List<MethodSpec> methodSpecs = new ArrayList<>();
-        final VariableElement mapperInstance = codeGenData.getMapperInstance();
+    JavaFile generateTests(final CodeGenData codeGenData) {
+        List<MethodSpec> methodSpecs = new ArrayList<>();
+        VariableElement mapperInstance = codeGenData.getMapperInstance();
 
         for (final CodeGenData.MapperMethod method : codeGenData.getMethods()) {
             messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING, "--- Sub-element: " + method.getMethod().getSimpleName());
@@ -32,14 +32,17 @@ class CodeGen {
             methodSpecs.add(generateNullFieldsCase(mapperInstance, method));
         }
 
-        final TypeSpec classSpecs = generateTestClass(methodSpecs, codeGenData.getMapperTestClass());
-        final JavaFile testFile = generateTestFile(classSpecs, extractPackage(codeGenData.getMapperTestClass()));
+        TypeSpec classSpecs = generateTestClass(methodSpecs, codeGenData.getMapperTestClass());
+        JavaFile testFile = generateTestFile(classSpecs, extractPackage(codeGenData.getMapperTestClass()));
 
         messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING, testFile.toString());
 
-        codeGenData.getDataGenerators().forEach((key, value) -> messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING, "Data generator for " + key + " : " + value.toString()));
+        codeGenData.getDataGenerators().forEach((key, value) -> messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING,
+                "Data generator for " + key + " : " + value.toString()));
+        codeGenData.getDataModifiers().forEach((key, value) -> messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING,
+                "Data post processor for " + key + " : " + value.toString()));
 
-        codeGenData.getDataModifiers().forEach((key, value) -> messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING, "Data post processor for " + key + " : " + value.toString()));
+        return testFile;
     }
 
     private AnnotationSpec testAnnotation(int invocationCount) {
@@ -65,36 +68,36 @@ class CodeGen {
                                            final CodeGenData.MapperMethod inverseMethod, final SpecialMappings specialMappings) {
         Objects.requireNonNull(inverseMethod);
 
-        final String testMethodName = generateTestMethodName(method.getMethod(), "");
-        final Map<String, String> subs = generateSubstitutions(codeGenData.getMapperInstance(), method, inverseMethod);
+        String testMethodName = generateTestMethodName(method.getMethod(), "");
+        Map<String, String> subs = generateSubstitutions(codeGenData.getMapperInstance(), method, inverseMethod);
 
-        final CodeBlock code = CodeBlock.builder()
+        CodeBlock code = CodeBlock.builder()
                 .addNamed(generateObjectInstantiation(method.getToType(), codeGenData.getDataGenerators(),
                         codeGenData.getDataModifiers()), subs)
                 .addNamed("$targetType:N mapped = $mapper:N.$method:N($mapper:N.$inverseMethod:N(generated));\n", subs)
-                .addNamed("assertEquals(generated, mapped)", subs)
+                .addNamed("org.junit.Assert.assertEquals(generated, mapped)", subs)
                 .build();
 
         return generateTestCase(testMethodName, code, 10);
     }
 
     private MethodSpec generateNullObjectCase(final VariableElement mapperInstance, final CodeGenData.MapperMethod method) {
-        final String testMethodName = generateTestMethodName(method.getMethod(), "NullObject");
-        final Map<String, String> subs = generateSubstitutions(mapperInstance, method);
+        String testMethodName = generateTestMethodName(method.getMethod(), "NullObject");
+        Map<String, String> subs = generateSubstitutions(mapperInstance, method);
 
-        final CodeBlock code = CodeBlock.builder()
-                .addNamed("assertNull($mapper:N.$method:N(null))", subs)
+        CodeBlock code = CodeBlock.builder()
+                .addNamed("org.junit.Assert.assertNull($mapper:N.$method:N(null))", subs)
                 .build();
 
         return generateTestCase(testMethodName, code);
     }
 
     private MethodSpec generateNullFieldsCase(final VariableElement mapperInstance, final CodeGenData.MapperMethod method) {
-        final String testMethodName = generateTestMethodName(method.getMethod(), "NullObject");
-        final Map<String, String> subs = generateSubstitutions(mapperInstance, method);
+        String testMethodName = generateTestMethodName(method.getMethod(), "NullFields");
+        Map<String, String> subs = generateSubstitutions(mapperInstance, method);
 
-        final CodeBlock code = CodeBlock.builder()
-                .addNamed("assertNull($mapper:N.$method:N(null))", subs)
+        CodeBlock code = CodeBlock.builder()
+                .addNamed("org.junit.Assert.assertNull($mapper:N.$method:N(null))", subs)
                 .build();
 
         return generateTestCase(testMethodName, code);
@@ -115,13 +118,14 @@ class CodeGen {
 
     private String generateObjectInstantiation(final TypeMirror objectType, final Map<String, ExecutableElement> generators,
                                                final Map<String, ExecutableElement> postGenerators) {
+        List<TypeMirror> superTypes = getSuperTypes(objectType);
         Optional<ExecutableElement> generator = Optional.ofNullable(generators.get(objectType.toString()));
-        Optional<ExecutableElement> postGenerator = Optional.ofNullable(postGenerators.get(objectType.toString()));
+        Optional<ExecutableElement> postGenerator = findProcessor(objectType, superTypes, postGenerators);
 
         StringBuilder statement = new StringBuilder("$targetType:N generated = ");
         String objectCreation = generator
                 .map(method -> method.getSimpleName().toString() + "()")
-                .orElse("ENHANCED_RANDOM.nextObject($targetType:N.class)");
+                .orElse("$randomizer:N.nextObject($targetType:N.class)");
 
         if (postGenerator.isPresent()) {
             statement.append(postGenerator.get().getSimpleName())
@@ -133,15 +137,39 @@ class CodeGen {
         return statement.append(";\n").toString();
     }
 
-    final List<TypeMirror> getSuperTypes(final TypeMirror typeMirror) {
-        final List<TypeMirror> superTypes = new ArrayList<>();
-        final List<? extends TypeMirror> superType = processingEnv.getTypeUtils().directSupertypes(typeMirror);
+    private List<TypeMirror> getSuperTypes(final TypeMirror typeMirror) {
+        List<TypeMirror> superTypes = new ArrayList<>();
+        Queue<TypeMirror> typesStack = new LinkedList<>();
 
-        return null;
+        typesStack.add(typeMirror);
+
+        while (!typesStack.isEmpty()) {
+            TypeMirror current = typesStack.remove();
+            List<? extends TypeMirror> directSupertypes = processingEnv.getTypeUtils().directSupertypes(current);
+            superTypes.addAll(directSupertypes);
+            typesStack.addAll(directSupertypes);
+        }
+
+        messager.printMessage(Diagnostic.Kind.MANDATORY_WARNING, "Supertypes of " + typeMirror + ": " + superTypes);
+
+        return superTypes;
+    }
+
+    private Optional<ExecutableElement> findProcessor(final TypeMirror objectType, final List<TypeMirror> superTypes,
+                                                      final Map<String, ExecutableElement> processors) {
+        if (processors.containsKey(objectType.toString())) {
+            return Optional.of(processors.get(objectType.toString()));
+        } else {
+            return superTypes.stream()
+                    .map(TypeMirror::toString)
+                    .map(processors::get)
+                    .filter(Objects::nonNull)
+                    .findFirst();
+        }
     }
 
     private String extractPackage(final TypeElement typeElement) {
-        final List<String> parts = Arrays.asList(typeElement.getQualifiedName().toString().split("\\."));
+        List<String> parts = Arrays.asList(typeElement.getQualifiedName().toString().split("\\."));
         return String.join(".", parts.subList(0, parts.size() - 1));
     }
 
@@ -159,8 +187,9 @@ class CodeGen {
     }
 
     private Map<String, String> generateSubstitutions(final VariableElement mapperInstance, final CodeGenData.MapperMethod method) {
-        final Map<String, String> subs = new HashMap<>();
+        Map<String, String> subs = new HashMap<>();
 
+        subs.put("randomizer", "io.github.benas.randombeans.api.EnhancedRandom");
         subs.put("mapper", mapperInstance.getSimpleName().toString());
         subs.put("targetType", method.getToType().toString());
         subs.put("method", method.getMethod().getSimpleName().toString());
@@ -171,8 +200,9 @@ class CodeGen {
     private Map<String, String> generateSubstitutions(final VariableElement mapperInstance,
                                                       final CodeGenData.MapperMethod method,
                                                       final CodeGenData.MapperMethod inverseMethod) {
-        final Map<String, String> subs = new HashMap<>();
+        Map<String, String> subs = new HashMap<>();
 
+        subs.put("randomizer", "io.github.benas.randombeans.api.EnhancedRandom");
         subs.put("mapper", mapperInstance.getSimpleName().toString());
         subs.put("targetType", method.getToType().toString());
         subs.put("method", method.getMethod().getSimpleName().toString());
